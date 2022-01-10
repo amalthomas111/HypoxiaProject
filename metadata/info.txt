@@ -1,0 +1,13 @@
+Sample	Condition	Condition_full	Plus_3day_Norm	Combined_complete	Rep	Combined
+MCF7_14day_1pct_Hyp_H3K27ac_S15.dedup.bam	Hypoxia	1pct_Hyp	No	1pct_Hyp_rep1	Rep1	1pct_Hyp
+MCF7_14day_1pct_Hyp_H3K27ac_S15_rep2.dedup.bam	Hypoxia	1pct_Hyp	No	1pct_Hyp_rep2	Rep2	1pct_Hyp
+MCF7_14day_1pct_Hyp_plus_3day_Norm_H3K27ac_S18_rep2.dedup.bam	Hypoxia	1pct_Hyp	Yes	1pct_Hyp_plus_3_norm_rep2	Rep2	1pct_Hyp_plus_3_norm
+MCF7_14day_1pct_Hyp_pos_3day_Norm_H3K27ac_S18.dedup.bam	Hypoxia	1pct_Hyp	Yes	1pct_Hyp_plus_3_norm_rep1	Rep1	1pct_Hyp_plus_3_norm
+MCF7_14day_4pct_Hyp_H3K27ac_S14.dedup.bam	Hypoxia	4pct_Hyp	No	4pct_Hyp_rep1	Rep1	4pct_Hyp
+MCF7_14day_4pct_Hyp_H3K27ac_S14_rep2.dedup.bam	Hypoxia	4pct_Hyp	No	4pct_Hyp_rep2	Rep2	4pct_Hyp
+MCF7_14day_4pct_Hyp_plus_3day_Norm_H3K27ac_S17_rep2.dedup.bam	Hypoxia	4pct_Hyp	Yes	4pct_Hyp_plus_3_norm_rep2	Rep2	4pct_Hyp_plus_3_norm
+MCF7_14day_4pct_Hyp_pos_3day_Norm_H3K27ac_S17.dedup.bam	Hypoxia	4pct_Hyp	Yes	4pct_Hyp_plus_3_norm_rep1	Rep1	4pct_Hyp_plus_3_norm
+MCF7_14day_Norm_H3K27ac_S13.dedup.bam	Norm	Norm	No	Norm_rep1	Rep1	Norm
+MCF7_14day_Norm_H3K27ac_S13_rep2.dedup.bam	Norm	Norm	No	Norm_rep2	Rep2	Norm
+MCF7_14day_Norm_plus_3day_Norm_H3K27ac_S16_rep2.dedup.bam	Norm	Norm	Yes	Norm_plus_3_norm_rep2	Rep2	Norm_plus_3_norm
+MCF7_14day_Norm_pos_3day_Norm_H3K27ac_S16.dedup.bam	Norm	Norm	Yes	Norm_plus_3_norm_rep1	Rep1	Norm_plus_3_norm
