@@ -1,0 +1,151 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(data.table)
+```
+
+
+```{r}
+lib_file <- "~/git/HypoxiaProject/metadata/lib_names.txt"
+df <- read.table(lib_file ,sep = "\t",
+                 col.names = c("rep1", "rep2"))
+head(df)
+```
+```{r}
+summary(df$rep1 == df$rep2)
+```
+
+
+```{r}
+df [df$rep1 == df$rep2,]
+```
+
+
+```{r}
+ne <- df [df$rep1 != df$rep2,]
+ne
+```
+```{r}
+ne$rep1 <- gsub("pos","plus", ne$rep1)
+summary(ne$rep1 == ne$rep2)
+```
+```{r}
+df1 <- df
+df1$rep1 <-  gsub("pos","plus", df1$rep1)
+df1$rep1 <-  gsub(".gz","", df1$rep1)
+df1$rep2 <-  gsub(".gz","", df1$rep2)
+df1$rep1 <-  gsub("plus_3day", "plus3day", df1$rep1)
+df1$rep2 <-  gsub("plus_3day", "plus3day", df1$rep2)
+summary(df1$rep1 == df1$rep2)
+```
+# x1 hyp
+```{r}
+x1 <- df1[grepl("Hyp", df1$rep1) & !grepl("plus", df1$rep1), ]
+x1
+```
+
+```{r}
+r1 <- tstrsplit(x1$rep1,"_")
+r2 <- tstrsplit(x1$rep2,"_")
+rep1_renamed <- paste(r1[[1]], r1[[2]], r1[[3]], r1[[4]], r1[[5]], rep("rep1", length(x1$rep1)), sep = ".")
+rep1_renamed <- paste0(paste(rep1_renamed, r1[[7]], sep =  "_"), ".fastq")
+
+rep2_renamed <- paste(r2[[1]], r2[[2]], r2[[3]], r2[[4]], r2[[5]], rep("rep2", length(x1$rep2)), sep = ".")
+rep2_renamed  <- paste0(paste(rep2_renamed, r2[[7]], sep =  "_"), ".fastq")
+
+x1$rep1_renamed <-  rep1_renamed
+x1$rep2_renamed <-  rep2_renamed
+head(x1)
+```
+
+```{r}
+summary(gsub(".rep1","",x1$rep1_renamed) == gsub(".rep2", "", x1$rep2_renamed))
+```
+# x2 hyp 3day
+```{r}
+x2 <- df1[grepl("Hyp_plus3day_Norm", df1$rep1), ]
+x2
+```
+
+```{r}
+r1 <- tstrsplit(x2$rep1,"_")
+r2 <- tstrsplit(x2$rep2,"_")
+rep1_renamed <- paste(r1[[1]], r1[[2]], r1[[3]], r1[[4]], r1[[5]], r1[[6]], r1[[7]], rep("rep1", length(x2$rep1)), sep = ".")
+rep1_renamed <- paste0(paste(rep1_renamed, r1[[9]], sep =  "_"), ".fastq")
+
+rep2_renamed <- paste(r2[[1]], r2[[2]], r2[[3]], r2[[4]], r2[[5]], r2[[6]], r2[[7]], rep("rep2", length(x2$rep2)), sep = ".")
+rep2_renamed  <- paste0(paste(rep2_renamed, r2[[9]], sep =  "_"), ".fastq")
+
+x2$rep1_renamed <-  rep1_renamed
+x2$rep2_renamed <-  rep2_renamed
+head(x2)
+```
+
+
+```{r}
+summary(gsub(".rep1","",x2$rep1_renamed) == gsub(".rep2", "", x2$rep2_renamed))
+```
+
+# x3 Norm
+
+```{r}
+x3 <- df1[grepl("Norm", df1$rep1) & !grepl("plus", df1$rep1), ]
+x3
+```
+```{r}
+r1 <- tstrsplit(x3$rep1,"_")
+r2 <- tstrsplit(x3$rep2,"_")
+
+rep1_renamed <- paste(r1[[1]], r1[[2]], r1[[3]], r1[[4]], rep("rep1", length(x3$rep1)), sep = ".")
+rep1_renamed <- paste0(paste(rep1_renamed, r1[[6]], sep =  "_"), ".fastq")
+
+rep2_renamed <- paste(r2[[1]], r2[[2]], r2[[3]], r2[[4]], rep("rep2", length(x3$rep2)), sep = ".")
+rep2_renamed  <- paste0(paste(rep2_renamed, r2[[6]], sep =  "_"), ".fastq")
+
+x3$rep1_renamed <-  rep1_renamed
+x3$rep2_renamed <-  rep2_renamed
+head(x3)
+```
+
+```{r}
+summary(gsub(".rep1","",x3$rep1_renamed) == gsub(".rep2", "", x3$rep2_renamed))
+```
+
+
+# x4 norm 3day
+```{r}
+x4 <- df1[grepl("Norm_plus3day_Norm", df1$rep1), ]
+x4
+```
+
+```{r}
+r1 <- tstrsplit(x4$rep1,"_")
+r2 <- tstrsplit(x4$rep2,"_")
+rep1_renamed <- paste(r1[[1]], r1[[2]], r1[[3]], r1[[4]], r1[[5]], r1[[6]], rep("rep1", length(x4$rep1)), sep = ".")
+rep1_renamed <- paste0(paste(rep1_renamed, r1[[8]], sep =  "_"), ".fastq")
+
+rep2_renamed <- paste(r2[[1]], r2[[2]], r2[[3]], r2[[4]], r2[[5]], r2[[6]], rep("rep2", length(x4$rep2)), sep = ".")
+rep2_renamed  <- paste0(paste(rep2_renamed, r2[[8]], sep =  "_"), ".fastq")
+
+x4$rep1_renamed <-  rep1_renamed
+x4$rep2_renamed <-  rep2_renamed
+head(x4)
+```
+
+```{r}
+newdf <- rbind(x1, x2, x3, x4)
+dim(newdf)
+```
+
+
+```{r}
+newdf1 <- data.frame(name = newdf$rep1, renamed = newdf$rep1_renamed)
+write.table(newdf1, file = "../metadata/rep1_rnamed.txt", sep = "\t", quote = F, col.names = F, row.names = F)
+newdf2 <- data.frame(name = newdf$rep2, renamed = newdf$rep2_renamed)
+write.table(newdf2, file = "../metadata/rep2_rnamed.txt", sep = "\t", quote = F, col.names = F, row.names = F)
+```
+
