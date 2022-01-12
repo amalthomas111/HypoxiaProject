@@ -1,0 +1,6 @@
+	treatment	histone	batch
+H8_H3K9me3_E4	8wkHyp	H3K9me3	E4
+H8_H3K9me3_E6	8wkHyp	H3K9me3	E6
+N3_H3K9me3_E6	3dayNorm	H3K9me3	E6
+N8_H3K9me3_E4	8wkNorm	H3K9me3	E4
+N8_H3K9me3_E6	8wkNorm	H3K9me3	E6

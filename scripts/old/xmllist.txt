@@ -1,0 +1,7 @@
+WT_ERC.R1.sorted.nodup.bam,WT_ERC.R2.sorted.nodup.bam
+WTplusE2_ERC.R1.sorted.nodup.bam,WTplusE2_ERC.R2.sorted.nodup.bam
+Mut_ERC.R1.sorted.nodup.bam,Mut_ERC.R2.sorted.nodup.bam
+MutplusE2_ERC.R1.sorted.nodup.bam,MutplusE2_ERC.R2.sorted.nodup.bam
+WTplusE2_ERN.R1.sorted.nodup.bam,WTplusE2_ERN.R2.sorted.nodup.bam
+Mut_ERN.R1.sorted.nodup.bam,Mut_ERN.R2.sorted.nodup.bam
+MutplusE2_ERN.R1.sorted.nodup.bam,MutplusE2_ERN.R2.sorted.nodup.bam

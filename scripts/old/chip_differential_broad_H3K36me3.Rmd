@@ -1,0 +1,673 @@
+---
+title: "chip differential broad H3K36me3"
+output: html_notebook
+---
+
+
+
+```{r}
+suppressPackageStartupMessages({
+  library(DESeq2)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(gplots)
+  library(ggplot2)
+  library(KEGG.db)
+  library(GO.db)
+  library(goseq)
+  library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+  library(org.Hs.eg.db)
+  library(GenomeInfoDb)
+  library(ChIPseeker)
+  library(rGREAT)
+})
+```
+
+#granges from bed3
+```{r}
+create_granges_frombed3 = function(bed){
+  gr1 = read.table(bed,sep="\t",header = F)
+  head=c("chr","start","end")
+  names(gr1)=head
+  gr = GRanges(seqnames=gr1$chr,
+               ranges=IRanges(start=gr1$start+1,end=gr1$end),
+               strand=rep("*",nrow(gr1)))
+  return(gr)
+}
+
+```
+
+```{r}
+create_grangesnew_frombed3 = function(bed){
+  gr1 = bed
+  gr = GRanges(seqnames=gr1$seqnames,
+               ranges=IRanges(start=gr1$start+1,end=gr1$end),
+               strand=rep("*",nrow(gr1)))
+  return(gr)
+}
+
+```
+
+# barplot
+```{r}
+barplot <- function(df, showCategory=15){
+  #df <- df[with(df, order(ratio, padj, decreasing = c(TRUE, FALSE))),]
+  df <- df[with(df, order( padj, decreasing = c(FALSE))),]
+  df <- head(df, n=showCategory)
+  breaks <- round( c(0, 1/4, 2/4, 3/4, 1) * max(df[['ratio']]) , 2)
+  p_plot <- ggplot(df, aes_string(x="term", y="ratio", fill="padj")) + geom_col() +
+    scale_y_continuous(expand=c(0, 0), breaks=breaks, limits=c(0, max(df[["ratio"]]+0.05))) +
+    scale_x_discrete(name='term') + theme(text=ggplot2::element_text(size=9)) +
+    coord_flip() +  theme_bw(base_size=9) + scale_color_gradient(low="blue", high="red") +
+    ylab("Ratio of DE genes in Category") +
+    xlab("KEGG pathway")
+  #scale_fill_continuous(low="#00dbde", high="#FFF94C") + 
+  return(p_plot)
+}
+```
+
+# dotplot
+```{r}
+dotplot <- function(df, showCategory=15){
+  #df <- df[with(df, order(ratio, padj, decreasing = c(TRUE, FALSE))),]
+  df <- df[with(df, order( padj, decreasing = c(FALSE))),]
+  df <- head(df, n=showCategory)
+  d_plot <- ggplot(df, aes_string(x="term", y="ratio", colour="padj",size="numDEInCat")) + 
+    geom_point() + scale_color_gradient(low="blue", high="red")+ coord_flip() +
+    theme_bw(base_size=9) +
+    ylab("Ratio of DE genes in Category") +
+    xlab("KEGG pathway")
+  #scale_color_gradient(low="#00dbde",   high="#FFF94C") +
+  return(d_plot)
+}
+```
+
+# rGREAT analysis
+```{r}
+great = function(commonPeaks){
+  
+seqlevelsStyle(commonPeaks) <- "UCSC"
+great_Job <- submitGreatJob(commonPeaks, species = "hg19")
+availableCategories(great_Job)
+great_ResultTable_motifs = getEnrichmentTables(great_Job, category = "Regulatory Motifs",request_interval=350)
+d.motif = as.data.frame(great_ResultTable_motifs$`MSigDB Predicted Promoter Motifs`)
+d.motif.filt=d.motif[d.motif$Binom_Raw_PValue<1e-10,]
+if(nrow(d.motif.filt)>0){
+  data = cbind(d.motif.filt$ID,d.motif.filt$name,d.motif.filt$Binom_Raw_PValue)
+  colnames(data)=c("Id","name","Bin pvalue")
+  write.table(data,file = paste0("ontology/",outputname,"_MOTIF_Great.tsv"), row.names=F,sep="\t",quote = F)
+}
+#great_ResultTable_phentype = getEnrichmentTables(great_Job, category = "Phenotype Data and Human Disease")
+#great_go =getEnrichmentTables(great_Job, category = "GO")
+great_pathway =  getEnrichmentTables(great_Job, category = "Pathway Data")
+d=as.data.frame(great_pathway$`PANTHER Pathway`)
+d.filt=d[d$Binom_Raw_PValue<0.05,]
+if(nrow(d.filt)>0){
+  data = cbind(d.filt$ID,d.filt$name,d.filt$Binom_Raw_PValue)
+  colnames(data)=c("Id","name","Bin pvalue")
+  write.table(data,file = paste0("ontology/",outputname,"_PANTHER_Great.tsv"), row.names=F,sep="\t",quote = F)
+}
+}
+```
+
+# KEGG pathway
+```{r}
+kegg = function(bed1,bed2,genome,outputname){
+  
+  create_granges_frombed = function(bed){
+    #gr1 = read.table(bed,sep="\t",header = T)
+    gr1=bed
+    #head=c("chr","start","end")
+    #names(gr1)=head
+    gr = GRanges(seqnames=gr1$chr,
+                 ranges=IRanges(start=gr1$start+1,end=gr1$end),
+                 strand=rep("*",nrow(gr1)))
+    return(gr)
+  }
+  
+  gr1=create_granges_frombed(bed1)
+  gr2=create_granges_frombed(bed2)
+  
+  allPeaks <- c(gr1,gr2)
+  commonPeaks <- reduce(allPeaks)
+  Txdb<- TxDb.Hsapiens.UCSC.hg19.knownGene
+  hg19_genes<- genes(Txdb)
+  promoters= promoters(hg19_genes,upstream = 1000,downstream = 1000)
+  allGenes <- unique(unlist(keys(TxDb.Hsapiens.UCSC.hg19.knownGene, "GENEID")))
+  length(allGenes)
+  # print(paste0("up ",length(gr1)))
+  # print(paste0("down ",length(gr2)))
+  # print(paste0("combined ",length(commonPeaks)))
+  
+    xx <- as.list(KEGGPATHID2NAME)
+  temp <- cbind(names(xx),unlist(xx))
+  addKeggTogoseq <- function(JX,temp){
+    for(l in 1:nrow(JX)){
+      if(JX[l,1] %in% temp[,1]){
+        JX[l,"term"] <- temp[temp[,1] %in% JX[l,1],2]
+        JX[l,"ontology"] <- "KEGG"
+      }
+      
+    }
+    return(JX)
+  }
+  
+  if(length(gr1)){
+      peakAnno.up <- annotatePeak(gr1, tssRegion = c(-1000, 1000), TxDb = TxDb.Hsapiens.UCSC.hg19.knownGene,annoDb = "org.Hs.eg.db")
+      output=paste0("annotation/annotate_UP",outputname,".tsv")
+      write.table(as.data.frame(peakAnno.up),file = output,sep="\t",quote = F, row.names = F)
+      peakAnno_GR.up <- as.GRanges(peakAnno.up)
+      genesWithPeakInTSS.up <- unique(peakAnno_GR.up[peakAnno_GR.up$annotation == "Promoter",]$geneId)
+      genesWithPeakInTSS1.up = unique(promoters[promoters %over% gr1]$gene_id)
+      allGenesForGOseq.up <- as.integer(allGenes %in% genesWithPeakInTSS.up)
+      allGenesForGOseq1.up <- as.integer(allGenes %in% genesWithPeakInTSS1.up)
+      names(allGenesForGOseq.up) <- allGenes
+      names(allGenesForGOseq1.up) <- allGenes
+      pwf.up = nullp(allGenesForGOseq.up, "hg19", "knownGene", plot.fit = FALSE)
+      pwf1.up = nullp(allGenesForGOseq1.up, "hg19", "knownGene", plot.fit = FALSE)
+      go.mf.up<-goseq(pwf.up,genome="hg19","knownGene", test.cats = c("GO:BP","GO:MF"))#, method = "Hypergeometric")#"GO:BP","GO:MF",
+      go.mf1.up<-goseq(pwf1.up,genome="hg19","knownGene", test.cats = c("GO:BP","GO:MF"))
+      go.mf.up$padj = p.adjust(go.mf.up$over_represented_pvalue, method="BH")
+      go.mf.up$ratio <- go.mf.up$numDEInCat/ go.mf.up$numInCat
+      go.mf1.up$padj = p.adjust(go.mf1.up$over_represented_pvalue, method="BH")
+      go.mf1.up$ratio <- go.mf1.up$numDEInCat / go.mf1.up$numInCat
+      
+      if(nrow(go.mf.up)>0){
+      head(go.mf.up)
+      fig=barplot(go.mf.up, showCategory = 15)
+      ggsave(plot = fig,filename=paste0("plots/",outputname,"_GO_UP.pdf"))
+      }
+      # if(nrow(go.mf1.up)>0){
+      # head(go.mf1.up)
+      # fig=barplot(go.mf1.up, showCategory = 15)
+      # ggsave(plot = fig,filename=paste0("plots/",outputname,"_hg19prom_GO_UP.pdf"))
+      # }
+      enriched.go.up = go.mf.up$category[p.adjust(go.mf.up$over_represented_pvalue,method="BH")<0.5]
+      restemp.mf.up = addKeggTogoseq(go.mf.up,temp)
+      restemp.mf1.up = addKeggTogoseq(go.mf1.up,temp)
+      go.up = goseq(pwf.up,genome="hg19","knownGene", test.cats = c("KEGG"))#,method = "Hypergeometric")
+      go1.up = goseq(pwf1.up,genome="hg19","knownGene", test.cats = c("KEGG"))#,method = "Hypergeometric")
+      restemp.up <-addKeggTogoseq(go.up,temp)
+      restemp1.up <-addKeggTogoseq(go1.up,temp)
+      restemp.up$padj = p.adjust(restemp.up$over_represented_pvalue, method="BH")
+      restemp.up$ratio = restemp.up$numDEInCat/restemp.up$numInCat
+      
+      restemp1.up$padj = p.adjust(restemp1.up$over_represented_pvalue, method="BH")
+      restemp1.up$ratio = restemp1.up$numDEInCat/restemp1.up$numInCat
+      
+      if(nrow(restemp.up)>0){
+      head(restemp.up)
+      fig=dotplot(restemp.up, showCategory = 15)
+      ggsave(plot = fig,filename=paste0("plots/",outputname,"_kEGGPATHWAY_UP.pdf"))
+      }
+      # if(nrow(restemp1.up)>0){
+      # head(restemp1.up)
+      # fig=dotplot(restemp1.up, showCategory = 15)
+      # ggsave(plot = fig,filename=paste0("plots/",outputname,"_kEGGPATHWAY_hg19prom_UP.pdf"))
+      # }
+      print("chipseeker")
+      print(head(restemp.up))
+      
+      print("hg19 annotation")
+      print(head(restemp1.up))
+      if(nrow(restemp.up)>0)
+      {
+      write.table(restemp.up,file=paste0("ontology/",outputname,"_UP_Kegg.tsv"), row.names=F,sep="\t",quote = F)
+      #write.table(restemp1.up,file=paste0("ontology/",outputname,"_UP_hg19Prom_Kegg.tsv"), row.names=F,sep="\t",quote = F)
+      }
+      
+      if(nrow(restemp.mf.up)>0)
+      {
+      write.table(restemp.mf.up,file=paste0("ontology/",outputname,"_UP_GO_MF.tsv"), row.names=F,sep="\t",quote = F)
+      #write.table(restemp.mf1.up,file=paste0("ontology/",outputname,"_UP_hg19Prom_GO_MF.tsv"), row.names=F,sep="\t",quote = F)
+      }
+  }
+  
+  if(length(gr2)){
+    peakAnno.down <- annotatePeak(gr2, tssRegion = c(-1000, 1000), TxDb = TxDb.Hsapiens.UCSC.hg19.knownGene,annoDb = "org.Hs.eg.db")
+    output=paste0("annotation/annotate_Down",outputname,".tsv")
+    write.table(as.data.frame(peakAnno.down),file = output,sep="\t",quote = F, row.names = F)
+    peakAnno_GR.down <- as.GRanges(peakAnno.down)
+    genesWithPeakInTSS.down <- unique(peakAnno_GR.down[peakAnno_GR.down$annotation == "Promoter",]$geneId)
+    genesWithPeakInTSS1.down = unique(promoters[promoters %over% gr2]$gene_id)
+    allGenesForGOseq.down <- as.integer(allGenes %in% genesWithPeakInTSS.down)
+    allGenesForGOseq1.down <- as.integer(allGenes %in% genesWithPeakInTSS1.down)
+    names(allGenesForGOseq.down) <- allGenes
+    names(allGenesForGOseq1.down) <- allGenes
+    pwf.down = nullp(allGenesForGOseq.down, "hg19", "knownGene", plot.fit = FALSE)
+    pwf1.down = nullp(allGenesForGOseq1.down, "hg19", "knownGene", plot.fit = FALSE)
+    go.mf.down<-goseq(pwf.down,genome="hg19","knownGene", test.cats = c("GO:BP","GO:MF"))#, method = "Hypergeometric")#"GO:BP","GO:MF",
+    go.mf1.down<-goseq(pwf1.down,genome="hg19","knownGene", test.cats = c("GO:BP","GO:MF"))
+    
+    go.mf.down$padj = p.adjust(go.mf.down$over_represented_pvalue, method="BH")
+    go.mf.down$ratio <- go.mf.down$numDEInCat / go.mf.down$numInCat
+    go.mf1.down$padj = p.adjust(go.mf1.down$over_represented_pvalue, method="BH")
+    go.mf1.down$ratio <- go.mf1.down$numDEInCat / go.mf1.down$numInCat
+    if(nrow(go.mf.down)>0){
+    head(go.mf.down)
+    fig=barplot(go.mf.down, showCategory = 15)
+    ggsave(plot = fig,filename=paste0("plots/",outputname,"_GO_DOWN.pdf"))
+    }
+    if(nrow(go.mf1.down)>0){
+    head(go.mf1.down)
+    fig=barplot(go.mf1.down, showCategory = 15)
+    #ggsave(plot = fig,filename=paste0("plots/",outputname,"_hg19prom_GO_DOWN.pdf"))
+    } 
+    enriched.go.down = go.mf.down$category[p.adjust(go.mf.down$over_represented_pvalue,method="BH")<0.5]
+    restemp.mf.down = addKeggTogoseq(go.mf.down,temp)
+    restemp.mf1.down = addKeggTogoseq(go.mf1.down,temp)
+    go.down = goseq(pwf.down,genome="hg19","knownGene", test.cats = c("KEGG"))#,method = "Hypergeometric")
+    go1.down = goseq(pwf1.down,genome="hg19","knownGene", test.cats = c("KEGG"))#,method = "Hypergeometric")
+    
+    restemp.down <-addKeggTogoseq(go.down,temp)
+    restemp1.down <-addKeggTogoseq(go1.down,temp)
+    restemp.down$padj = p.adjust(restemp.down$over_represented_pvalue, method="BH")
+    restemp.down$ratio = restemp.down$numDEInCat/restemp.down$numInCat
+    
+    restemp1.down$padj = p.adjust(restemp1.down$over_represented_pvalue, method="BH")
+    restemp1.down$ratio = restemp1.down$numDEInCat/restemp1.down$numInCat
+    if(nrow(restemp.down)>0){
+    head(restemp.down)
+    fig=dotplot(restemp.down, showCategory = 15)
+    ggsave(plot = fig,filename=paste0("plots/",outputname,"_kEGGPATHWAY_DOWN.pdf"))
+    }
+    if(nrow(restemp1.down)>0){
+    head(restemp1.down)
+    fig=dotplot(restemp1.down, showCategory = 15)
+    #ggsave(plot = fig,filename=paste0("plots/",outputname,"_kEGGPATHWAY_hg19prom_DOWN.pdf"))
+    }
+    print("chipseeker")
+    print(head(restemp.down))
+    print("hg19 annotation")
+    print(head(restemp1.down))
+    print(nrow(restemp.down))
+    if(nrow(restemp.down)>0)
+    {
+    write.table(restemp.down,file=paste0("ontology/",outputname,"_Down_Kegg.tsv"), row.names=F,sep="\t",quote = F)
+    #write.table(restemp1.down,file=paste0("ontology/",outputname,"_Down_hg19Prom_Kegg.tsv"), row.names=F,sep="\t",quote = F)
+    }
+    
+    if(nrow(restemp.mf.down)>0)
+    {
+    write.table(restemp.mf.down,file=paste0("ontology/",outputname,"_Down_GO_MF.tsv"), row.names=F,sep="\t",quote = F)
+    #write.table(restemp.mf1.down,file=paste0("ontology/",outputname,"_Down_hg19Prom_GO_MF.tsv"), row.names=F,sep="\t",quote = F)
+    }
+  }
+  
+  #Call Great Function
+  great(commonPeaks)
+}
+
+```
+
+#Write outputfiles
+```{r}
+createoutput = function(res, rld1, outputname){
+  #assay(rld1) <- limma::removeBatchEffect(assay(rld1), rld1$batch)
+  #rlogcount <- assay(rld1)
+  # sampleDists <- as.matrix(dist(t(rlogcount)))
+  # showcols <- brewer.pal(8, "Set1")[1:length(unique(colData(rld1)$treatment))]
+  # a=data.frame(name=colData(rld1)$treatment)
+  # hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
+  # pdf(file = paste0("plots/MDS_PCA_Heatmap/",outputname,"_sampledist.pdf"))
+  # heatmap.2(as.matrix(sampleDists), key=F, trace="none",
+  #           col=hmcol,
+  #               ColSideColors=showcols[factor(a$name)], 
+  #               RowSideColors=showcols[factor(a$name)],
+  #           margin=c(10, 10))
+  # dev.off()
+  test_treatment <- res
+  
+  #differential regions
+  up_fdr <- test_treatment[!is.na(test_treatment$padj) & test_treatment$padj <= 0.05  & test_treatment$log2FoldChange > 0]
+  down_fdr <- test_treatment[test_treatment$padj <= 0.05 & !is.na(test_treatment$padj) & test_treatment$log2FoldChange < 0]
+  
+  up_fdr.log2 <- test_treatment[test_treatment$padj < 0.05 & !is.na(test_treatment$padj) & test_treatment$log2FoldChange >= 1]
+  down_fdr.log2 <- test_treatment[test_treatment$padj < 0.05 & !is.na(test_treatment$padj) & test_treatment$log2FoldChange <= -1] 
+  up_fdr_0.1 <- test_treatment[test_treatment$padj <= 0.1 & !is.na(test_treatment$padj) & test_treatment$log2FoldChange > 0]
+  down_fdr_0.1 <- test_treatment[test_treatment$padj <= 0.1 & !is.na(test_treatment$padj) & test_treatment$log2FoldChange < 0]
+  
+  up_fdr.log2_0.1 <- test_treatment[test_treatment$padj <= 0.1 & !is.na(test_treatment$padj) & test_treatment$log2FoldChange >= 1]
+  down_fdr.log2_0.1 <- test_treatment[test_treatment$padj <= 0.1 & !is.na(test_treatment$padj) & test_treatment$log2FoldChange <= -1] 
+  cat("#####\n No. of Differential regions identified:\nfdr_up\n")
+  print(length(up_fdr))
+  print("fdr_down")
+  print(length(down_fdr))
+  
+  #function to create data frame for output generation
+  create_output =function(df,flag){
+    if(flag==1) df=df[order(df$padj)]
+    if(flag==2) df=df[order(df$pvalue)]
+    gr1 <- data.frame(chr=seqnames(df),
+                      start=start(df)-1,
+                      end=end(df),
+                      log2Foldchange=df$log2FoldChange,
+                      pvalue=df$pvalue,
+                      padj=df$padj)  
+    
+  }
+
+  if(length(up_fdr)){
+    up.regions=create_output(up_fdr,1)
+    write.table(up.regions, file=paste0("fdr0.05/",outputname,"_DESEQ2_up_fdr0.05.bed"), quote=F, sep="\t", row.names=F, col.names=T)
+  }
+  if(length(down_fdr))
+  {
+    down.regions=create_output(down_fdr,1)
+    write.table(down.regions,file=paste0("fdr0.05/",outputname,"_DESEQ2_down_fdr0.05.bed"), quote=F, sep="\t", row.names=F, col.names=T)
+  }
+  if(length(up_fdr.log2)){
+    up.regions=create_output(up_fdr.log2,1)
+    write.table(up.regions, file=paste0("fdr0.05/fold2/",outputname,"_DESEQ2.fold2_up_fdr0.05.bed"), quote=F, sep="\t", row.names=F, col.names=T)
+  }
+  if(length(down_fdr.log2))
+  {
+    down.regions=create_output(down_fdr.log2,1)
+    write.table(down.regions,file=paste0("fdr0.05/fold2/",outputname,"_DESEQ2.fold2_down_fdr0.05.bed"), quote=F, sep="\t", row.names=F, col.names=T)
+  }
+  
+    if(length(up_fdr_0.1)){
+    up.regions=create_output(up_fdr_0.1,1)
+    write.table(up.regions, file=paste0("fdr0.1/",outputname,"_DESEQ2_up_fdr0.1.bed"), quote=F, sep="\t", row.names=F, col.names=T)
+    }
+  if(length(down_fdr_0.1))
+  {
+    down.regions=create_output(down_fdr_0.1,1)
+    write.table(down.regions,file=paste0("fdr0.1/",outputname,"_DESEQ2_down_fdr0.1.bed"), quote=F, sep="\t", row.names=F, col.names=T)
+  }
+  if(length(up_fdr.log2_0.1)){
+    up.regions=create_output(up_fdr.log2_0.1,1)
+    write.table(up.regions, file=paste0("fdr0.1/fold2/",outputname,"_DESEQ2.fold2_up_fdr0.1.bed"), quote=F, sep="\t", row.names=F, col.names=T)
+  }
+  if(length(down_fdr.log2_0.1))
+  {
+    down.regions=create_output(down_fdr.log2_0.1,1)
+    write.table(down.regions,file=paste0("fdr0.1/fold2/",outputname,"_DESEQ2.fold2_down_fdr0.1.bed"), quote=F, sep="\t", row.names=F, col.names=T)
+  }
+  
+  #Ontology & pathway analysis
+  if(length(up_fdr)+length(down_fdr) > 10){
+    #kegg(create_output(up_fdr,1),create_output(down_fdr,1),"hg19",outputname)
+  }
+  
+  up <- test_treatment[test_treatment$log2FoldChange > 0 & !is.na(test_treatment$pvalue)]
+  top_up = create_output(up,2)
+  down = test_treatment[test_treatment$log2FoldChange < 0 & !is.na(test_treatment$pvalue)]
+  top_down = create_output(down,2)
+  
+  write.table(top_up, file=paste0("otheroutput/",outputname,"_DESEQ2_up_sortpval.bed"), quote=F, sep="\t", row.names=F, col.names=T)
+  write.table(top_up, file=paste0("otheroutput/",outputname,"_DESEQ2_up_sortpval.bed"), quote=F, sep="\t", row.names=F, col.names=F)
+  write.table(head(top_up,n=100L), file=paste0("otheroutput/",outputname,"_DESEQ2_up_sortpval_top100.bed"), 
+              quote=F, sep="\t", row.names=F, col.names=F)
+  
+  write.table(top_down, file=paste0("otheroutput/",outputname,"_DESEQ2_down_sortpval.bed"), quote=F, sep="\t", row.names=F, col.names=T)
+  write.table(top_down, file=paste0("otheroutput/",outputname,"_DESEQ2_down_sortpval.bed"), quote=F, sep="\t", row.names=F, col.names=F)
+  write.table(head(top_down,n=100L), file=paste0("otheroutput/",outputname,"_DESEQ2_down_sortpval_top100.bed"),
+              quote=F, sep="\t", row.names=F, col.names=F)
+
+  # data <- plotPCA(rld1, intgroup="treatment", returnData=TRUE)
+  # percentVar <- round(100 * attr(data, "percentVar"))
+  # #pdf(file =  paste0("plots/",output.name,"_RNA_PCA.pdf"))
+  # ggplot(data, aes(PC1, PC2,label=rownames(colData(rld1))))+ theme_bw() +
+  #   theme(axis.line = element_line(colour = "black"),
+  #         panel.grid.major = element_blank(),
+  #         panel.grid.minor = element_blank(),
+  #         #panel.border = element_blank(),
+  #         panel.background = element_blank()) +
+  #  geom_text(col=showcols[factor(a$name)],size=2.5,check_overlap = FALSE)+
+  #   xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  #   ylab(paste0("PC2: ",percentVar[2],"% variance"))
+  # ggsave(filename =paste0("plots/MDS_PCA_Heatmap/",outputname,"_PCA.pdf") )
+}
+
+```
+
+# create directories
+```{r}
+mainDir=getwd()
+subDir="plots"
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+subDir="plots/MDS_PCA_Heatmap"
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+subDir="fdr0.05"
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+subDir="fdr0.05/fold2"
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+subDir="fdr0.1"
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+subDir="fdr0.1/fold2"
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+subDir="otheroutput"
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+subDir="countdata"
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+subDir="annotation"
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+subDir="ontology"
+dir.create(file.path(mainDir,subDir), showWarnings = FALSE)
+```
+
+# Read counts table
+```{r}
+path="count-tables/"
+df = read.table(paste0(path,"Jan14th_broad_counts.tsv"),sep="\t",header=T,row.names = 1)
+head(df[,1:3])
+paste0(nrow(df),"*",ncol(df))
+dim(df)
+```
+
+```{r}
+dim(df)
+df = df[!grepl("input",colnames(df))]
+dim(df)
+```
+
+
+# deign.matrix
+```{r}
+#design.matrix = data.frame(treatment=c("3dayNorm","3dayNorm","8wkNorm","8wkNorm","8wkHyp","8wkHyp"))
+#row.names(design.matrix) = colnames(df)
+design.matrix = read.table(paste0(path,"design.tsv"),sep="\t",col.names=c("file","treatment","histone","batch"),
+                           stringsAsFactors = F)
+row.names(design.matrix) = design.matrix$file
+design.matrix$file = NULL
+design.matrix
+```
+
+
+
+
+# ```{r}
+# colnames(df)
+# exclude = c("H8_H3K9me2_E2",
+#             "N3_H3K9me2_E2",
+#             "N3_H3K9me2_E6",
+#             "N8_H3K9me2_E2")
+# df = df[,!colnames(df) %in% exclude,]
+# ```
+
+
+# h3k27me3
+```{r}
+outputname = "H3K36me3"
+df1 = df[,grepl(outputname,colnames(df)),]
+exclude = c("H8_H3K9me2_E2",
+            "N3_H3K9me2_E2",
+            "N3_H3K9me2_E6",
+            "N3_H3K9me2_E1",
+            "N8_H3K9me2_E2")
+df1 = df1[,!colnames(df1) %in% exclude,]
+design.matrix1 = design.matrix[colnames(df1),]
+dim(df1)
+df1 = df1[,row.names(design.matrix1)]
+dim(design.matrix1)
+```
+
+
+```{r}
+summary(colnames(df1) == row.names(design.matrix1))
+```
+
+
+```{r}
+design.matrix1 = design.matrix1[colnames(df1),]
+design.matrix1$treatment = factor(design.matrix1$treatment)
+design.matrix1$histone = factor(design.matrix1$histone)
+design.matrix1$batch = factor(design.matrix1$batch)
+design.matrix1
+```
+
+```{r}
+levels(design.matrix1$histone)
+```
+
+
+#write design matrix
+```{r}
+write.table(design.matrix1,file = paste0("design_matrix_hyp-norm_",outputname,".tsv"),sep = "\t", quote = F, col.names = NA)
+```
+
+# Granges for all regions
+```{r}
+#path="/home/master/WORK/atac/private/remi/aug14.2016_alldata/DESEQ2/bedfiles/"
+bedfile="mergedpeaks/peaks_broad_merged.bed"
+totalwindows=create_granges_frombed3(paste0(bedfile))
+length(totalwindows)
+cutoff = 100
+df_new <- df1[ rowSums(df1) > cutoff,  ]
+paste0(nrow(df_new),"*",ncol(df_new))
+totalwindows_new = create_grangesnew_frombed3(data.frame(totalwindows)[as.logical(rowSums(df1) >cutoff),])
+nrow(df_new)
+length(totalwindows_new)
+```
+
+```{r}
+dim(df_new)
+```
+
+# DESEQ2 call parent vs non parent
+```{r}
+dds  = DESeqDataSetFromMatrix(countData= df_new, colData= design.matrix1, ~ treatment  + batch , rowRanges=totalwindows_new)
+dds =  DESeq(dds)#, minReplicatesForReplace=Inf)
+# dds <- estimateSizeFactors(dds)
+# dds <- estimateDispersions(dds)
+# dds <- nbinomWaldTest(dds, maxit=500)
+rld <-varianceStabilizingTransformation(dds,blind = TRUE)
+ret <- counts(dds, normalized=T) 
+write.table(ret,file = paste0("countdata/chip_countdata",outputname,"_DESEQ2_norm.tsv"),sep="\t",row.names = TRUE,quote = FALSE,col.names = NA)
+write.table(assay(rld),file = paste0("countdata/chip_countdata",outputname,"_RLD.tsv"),sep="\t",row.names = TRUE,quote = FALSE,col.names = NA)
+save(dds,file=paste0(outputname,"_dds.Robj"))
+save(rld,file=paste0(outputname,"_rld.Robj"))
+```
+
+```{r}
+rld3 = rld
+assay(rld3) <- limma::removeBatchEffect(assay(rld3), rld3$batch)
+
+rld1 =rld3
+  showcols <- brewer.pal(8, "Set1")[1:length(unique(colData(rld1)$treatment))]
+  a=data.frame(name=colData(rld1)$treatment)
+  data <- plotPCA(rld1, intgroup="treatment", ntop = 1000,returnData=TRUE)
+  percentVar <- round(100 * attr(data, "percentVar"))
+  #pdf(file =  paste0("plots/",output.name,"_RNA_PCA.pdf"))
+  ggplot(data, aes(PC1, PC2,label=rownames(data)))+ theme_bw() +
+    theme(axis.line = element_line(colour = "black"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          #panel.border = element_blank(),
+          panel.background = element_blank()) +
+   geom_text(col=showcols[factor(a$name)],size=1.5,check_overlap = FALSE)+
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance"))
+ggsave(filename =paste0("plots/MDS_PCA_Heatmap/",outputname,"_chip_PCA.pdf") )
+
+  rlogcount <- assay(rld1)
+  sampleDists <- as.matrix(dist(t(rlogcount)))
+  sampleDists
+  showcols <- brewer.pal(8, "Set1")[1:length(unique(colData(rld1)$treatment))]
+  a=data.frame(name=colData(rld1)$treatment)
+  hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
+  pdf(file = paste0("plots/MDS_PCA_Heatmap/",outputname,"_sampledist.pdf"))
+  heatmap.2(as.matrix(sampleDists), key=F, trace="none",
+            col=hmcol,
+                ColSideColors=showcols[factor(a$name)], 
+                RowSideColors=showcols[factor(a$name)],
+            margin=c(10, 10))
+  dev.off()
+```
+
+```{r}
+write.table(sampleDists,file = paste0("sampledist_",outputname,".tsv"),sep="\t",quote = F,col.names = NA)
+```
+
+```{r}
+design.narrow
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- #save image -->
+<!-- ```{r} -->
+<!-- resultsNames(dds) -->
+<!-- #save.image(file = "chip_h3k36me3.RData") -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- levels(design.matrix$treatment) -->
+<!-- ``` -->
+
+
+<!-- # 1. 3dayNorm_vs_8wkHyp -->
+<!-- ```{r} -->
+<!-- outputname = "Comparison4_h3k27me3_3dayNorm_vs_8wkHyp" -->
+<!-- res = results(dds, alpha=0.05, contrast = c("treatment","3dayNorm","8wkHyp"),format = "GRanges") -->
+<!-- keep1 = rowSums(counts(dds[,dds$treatment %in% c("3dayNorm")]) >= 5) >= 1 -->
+<!-- keep2 = rowSums(counts(dds[,dds$treatment %in% c("8wkHyp")]) >= 5) >= 1 -->
+<!-- res.sub = res[keep1 & keep2,] -->
+<!-- summary(res.sub) -->
+<!-- rld.sub = rld -->
+<!-- print(outputname) -->
+<!-- colData(rld.sub) -->
+<!-- createoutput(res.sub,rld.sub, outputname) -->
+<!-- ``` -->
+
+<!-- # 2.8wkNorm_vs_8wkHyp -->
+<!-- ```{r} -->
+<!-- outputname = "Comparison5_h3k27me3_8wkNorm_vs_8wkHyp" -->
+<!-- res = results(dds, alpha=0.05, contrast = c("treatment","8wkNorm","8wkHyp"),format = "GRanges") -->
+<!-- keep1 = rowSums(counts(dds[,dds$treatment %in% c("8wkNorm")]) >= 5) >= 1 -->
+<!-- keep2 = rowSums(counts(dds[,dds$treatment %in% c("8wkHyp")]) >= 5) >= 1 -->
+<!-- res.sub = res[keep1 & keep2,] -->
+<!-- summary(res.sub) -->
+<!-- rld.sub = rld -->
+<!-- print(outputname) -->
+<!-- colData(rld.sub) -->
+<!-- createoutput(res.sub,rld.sub, outputname) -->
+<!-- ``` -->
+
+
+<!-- # 3.8wkNorm_vs_3dayNorm -->
+<!-- ```{r} -->
+<!-- outputname = "Comparison6_h3k27me3_8wkNorm_vs_3dayNorm" -->
+<!-- res = results(dds, alpha=0.05, contrast = c("treatment","8wkNorm","3dayNorm"),format = "GRanges") -->
+<!-- keep1 = rowSums(counts(dds[,dds$treatment %in% c("8wkNorm")]) >= 5) >= 1 -->
+<!-- keep2 = rowSums(counts(dds[,dds$treatment %in% c("3dayNorm")]) >= 5) >= 1 -->
+<!-- res.sub = res[keep1 & keep2,] -->
+<!-- summary(res.sub) -->
+<!-- rld.sub = rld -->
+<!-- print(outputname) -->
+<!-- colData(rld.sub) -->
+<!-- createoutput(res.sub,rld.sub, outputname) -->
+<!-- ``` -->
