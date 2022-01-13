@@ -1,0 +1,66 @@
+---
+title: "ChIPQC_checks"
+output: html_notebook
+---
+
+
+
+# jaccard
+
+
+```{r}
+suppressPackageStartupMessages({
+library(genefilter)
+library(gplots)
+library(rafalib)
+library(RColorBrewer)
+library(data.table)
+})
+hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
+
+```
+
+
+```{r}
+myfile <- "/media/master/hdd/WORK/chipseq/private/oihana/Jan2022/QCchecks/jaccard/jaccard.tsv"
+df  <- as.matrix(read.table(myfile))
+row.names(df) <- gsub("MCF7.14day.", "", row.names(df))
+colnames(df) <- gsub("MCF7.14day.", "", colnames(df))
+diag(df) <- NA
+head(df)
+```
+
+```{r}
+remove_lastentry <- function(x) {
+  s <- tstrsplit(x,"\\.")
+  l <- length(s)
+  i <- 1
+  while(i <= l-1){
+    if(i == 1) {
+      newname <- s[[i]]
+      i <- i + 1
+      next
+    } else {
+      newname <- paste(newname, s[[i]], sep = ".")
+      i <- i + 1
+    }
+  }
+  return(newname)
+}
+```
+
+```{r}
+rnames <- row.names(df)
+cnames <- sapply(rnames, remove_lastentry)
+cnames
+cols <- c(brewer.pal(8, "Dark2"), brewer.pal(12, "Set3"), brewer.pal(9, "Set1"))[as.fumeric(cnames)]
+cols
+```
+
+```{r}
+outputname <- "hypoxia_MCF7_chipseq"
+pdf(file=paste0(outputname,"_jaccard.pdf"))
+heatmap.2(as.matrix(df), trace="none", na.rm=TRUE,labCol=FALSE, RowSideColors=cols,col=hmcol,margins=c(6,12),symm=T,,Rowv=TRUE, Colv=TRUE)
+dev.off()
+```
+
